@@ -1,7 +1,7 @@
 package br.com.tp.lncr.oauth.handlers;
 
 import br.com.tp.lncr.core.exceptions.OauthException;
-import br.com.tp.lncr.core.model.ResponseMetadata;
+import br.com.tp.lncr.commons.model.ResponseMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;

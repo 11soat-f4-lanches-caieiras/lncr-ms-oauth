@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: lncr-ms-notification
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+server:
+  port: 8080
+lncr:
+  integration:
+    customers-url: "http://localhost:8081/customers"
+  oauth:
+    oAuthSecretKey: "${LNCR_OAUTH_SECRET_KEY}"
+    expireIn: 7200 # 2 hours
+    profiles:
+      admin:
+        clientId: "${LNCR_OAUTH_ADMIN_CLIENT_ID}"
+        clientSecret: "${LNCR_OAUTH_ADMIN_CLIENT_SECRET}"
+        scope: "admin"
+        grantType: "client_credentials"
+      customer:
+        scope: "customer"
+        grantType: "client_credentials"
+      monitor:
+        clientId: "${LNCR_OAUTH_MONITOR_CLIENT_ID}"
+        clientSecret: "${LNCR_OAUTH_MONITOR_CLIENT_SECRET}"
+        scope: "monitor"
+        grantType: "client_credentials"
+      totem: # Self Service Terminal - Totem
+        clientId: "${LNCR_OAUTH_TOTEM_CLIENT_ID}"
+        clientSecret: "${LNCR_OAUTH_TOTEM_CLIENT_SECRET}"
+        scope: "totem"
+        grantType: "client_credentials"
+
+
+
