@@ -1,6 +1,8 @@
 spring:
   application:
-    name: lncr-ms-notification
+    name: oauth
+  server:
+    port: "${SERVER_PORT:8080}"
   jackson:
     default-property-inclusion: non_null
     serialization:
@@ -13,11 +15,10 @@ management:
   endpoint:
     health:
       show-details: always
-server:
-  port: 8080
 lncr:
+  internalUrl: "${LNCR_ALB_URL:http://localhost:8080}"
   integration:
-    customers-url: "http://localhost:8081/customers"
+    customersUrl: "${lncr.internalUrl}/customers"
   oauth:
     oAuthSecretKey: "${LNCR_OAUTH_SECRET_KEY}"
     expireIn: 7200 # 2 hours
