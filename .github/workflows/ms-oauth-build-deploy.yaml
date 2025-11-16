@@ -1,0 +1,293 @@
+name: Construir e Upload da Aplicação lncr-ms-oauth
+on:
+  repository_dispatch:
+    types: [infra-base-completed]
+
+  workflow_dispatch:
+    inputs:
+      only-helm-deploy:
+        description: 'Only Helm Deploy (skip build and upload)'
+        required: false
+        default: false
+        type: boolean
+
+  workflow_call:
+    inputs:
+      branch:
+        description: 'Branch to deploy'
+        required: false
+        default: 'develop'
+        type: string
+
+env:
+  #variáveis pipeline
+  AWS_CODE_BUILD: ${{ vars.AWS_CODE_BUILD }}
+  AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION }}
+  AWS_ECR_REGISTRY: ${{ vars.AWS_ECR_REGISTRY }}
+  BASE_IMAGE: ${{ vars.BASE_IMAGE }}
+  DOCKERFILE_PATH: "${{ vars.MS_DOMAIN }}/Dockerfile"
+  DOCKERFILE_TEMPLATE_URL: ${{ vars.DOCKERFILE_TEMPLATE_URL }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  EKS_CLUSTER: ${{ vars.EKS_CLUSTER }}
+  JACOCO_REPORT_PATH: "${{ vars.MS_DOMAIN }}/target/site/jacoco/jacoco.xml"
+  MAVEN_POM_PATH: "${{ vars.MS_DOMAIN }}/pom.xml"
+  MAVEN_SETTINGS_PATH: "${{ vars.MS_DOMAIN }}/maven_settings.xml"
+  MAVEN_TEMPLATE_URL: ${{ vars.MAVEN_TEMPLATE_URL }}
+  MS_DOMAIN: ${{ vars.MS_DOMAIN }}
+
+  #variáveis aplicação
+  LNCR_INTERNAL_URL: ${{ vars.LNCR_INTERNAL_URL }}
+
+  #variáveis kubernetes
+  ALB_NAME: ${{ vars.ALB_NAME }}
+  ALB_SUBNETS: ${{ vars.ALB_SUBNETS }}
+  ALB_SECURITY_GROUP: ${{ vars.ALB_SECURITY_GROUP }}
+  INGRESS_HOST: ${{ vars.INGRESS_HOST }}
+  MS_NAME: ${{ vars.MS_NAME }}
+
+  # secrets pipeline
+  LNCR_MAVEN_ACTOR: ${{ secrets.LNCR_MAVEN_ACTOR }}
+  LNCR_MAVEN_PAT: ${{ secrets.LNCR_MAVEN_PAT }}
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+  DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GITHUB_ACTOR: ${{ github.actor}}
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+
+jobs:
+  build-and-upload:
+    name: Validação Construção e Upload da Imagem Docker
+    runs-on: ${{ env.AWS_CODE_BUILD }}-${{ github.run_id }}-${{ github.run_attempt }}
+    #Disparado via repository_dispatch do repositório lncr-iac
+    if: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch') && !inputs.only-helm-deploy }}
+    environment:
+      name: ${{ github.ref_name == 'master' && 'prd' || 'dev' }}
+    steps:
+      - name: Fazer checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Configurar templates Docker e Maven
+        env:
+          BASE_IMAGE: ${{ env.BASE_IMAGE }}
+          DOCKERFILE_TEMPLATE_URL: ${{ env.DOCKERFILE_TEMPLATE_URL }}
+          DOCKERFILE_PATH: ${{ env.DOCKERFILE_PATH }}
+          MAVEN_TEMPLATE_URL: ${{ env.MAVEN_TEMPLATE_URL }}
+          MAVEN_SETTINGS_PATH: ${{ env.MAVEN_SETTINGS_PATH }}
+          MS_DOMAIN: ${{ env.MS_DOMAIN }}
+          LNCR_MAVEN_PAT: ${{ env.LNCR_MAVEN_PAT }}
+        run: |
+          BIN=$PWD
+          echo "Obtendo template do maven_settings.xml"
+          curl -s -H "Authorization: token ${LNCR_MAVEN_PAT}" -o $BIN/$MAVEN_SETTINGS_PATH "${MAVEN_TEMPLATE_URL}" 
+          
+          echo "Obtendo template do Docker File"
+          curl -s -H "Authorization: token ${LNCR_MAVEN_PAT}" -o $BIN/$DOCKERFILE_PATH "${DOCKERFILE_TEMPLATE_URL}"
+          
+          if [ -z "$BASE_IMAGE" ]; then
+            BASE_IMAGE="eclipse-temurin:21-jre-alpine"
+            echo "Usando imagem default ${BASE_IMAGE} para o build."
+          fi
+          
+          echo "Configurando Dockerfile para o dominio $MS_DOMAIN e imagem base $BASE_IMAGE"
+          sed -i "s/##MS_DOMAIN##/$MS_DOMAIN/g; s/##BASE_IMAGE##/$BASE_IMAGE/g;" $BIN/$DOCKERFILE_PATH
+
+      - name: Cache SonarQube packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Cache Maven Packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Análise SonarQube
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          MAVEN_SETTINGS_PATH: ${{ env.MAVEN_SETTINGS_PATH }}
+          MAVEN_POM_PATH: ${{ env.MAVEN_POM_PATH }}
+        run: |
+          mvn -B clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+          -s ${MAVEN_SETTINGS_PATH} \
+          -f ${MAVEN_POM_PATH} \
+          -Pcoverage
+
+      - name: Cobertura de Testes Jacoco & Sonar
+        env:
+          JACOCO_REPORT_PATH: ${{ env.JACOCO_REPORT_PATH }}
+        run: |
+          if [ -f $JACOCO_REPORT_PATH ]; then
+            COVERED=$(grep -oP 'counter type="INSTRUCTION"[^>]+covered="\K[0-9]+' $JACOCO_REPORT_PATH | awk '{s+=$1} END {print s}')
+            MISSED=$(grep -oP 'counter type="INSTRUCTION"[^>]+missed="\K[0-9]+' $JACOCO_REPORT_PATH | awk '{s+=$1} END {print s}')
+            if [[ "$COVERED" =~ ^[0-9]+$ ]] && [[ "$MISSED" =~ ^[0-9]+$ ]] && [ $((COVERED + MISSED)) -ne 0 ]; then
+              PERCENT=$(awk "BEGIN {printf \"%.2f\", 100 * $COVERED / ($COVERED + $MISSED)}")
+              echo "Cobertura de instruções: $PERCENT%"
+              echo "COVERAGE_PERCENTAGE=$PERCENT" >> $GITHUB_ENV
+              echo "MISSED=$MISSED" >> $GITHUB_ENV
+            else
+              echo "Valores de cobertura não encontrados. Falhando o build."
+              exit 1
+            fi
+          else
+            echo "Relatório Jacoco não encontrado."
+          fi
+
+      - name: Validação de Cobertura
+        env:
+          COVERAGE_THRESHOLD: 80.0
+          COVERAGE_PERCENTAGE: ${{ env.COVERAGE_PERCENTAGE }}
+        run: |
+          if [ -z "$COVERAGE_PERCENTAGE" ]; then
+            echo "Porcentagem de cobertura não disponível. Falhando o build."
+            exit 1
+          fi
+          COMP=$(awk "BEGIN {print ($COVERAGE_PERCENTAGE < $COVERAGE_THRESHOLD)}")
+          if [ "$COMP" -eq 1 ]; then
+            echo "Cobertura de código $COVERAGE_PERCENTAGE% é menor que o limite de $COVERAGE_THRESHOLD%. Falhando o build."
+            exit 1
+          else
+           echo "Cobertura de código $COVERAGE_PERCENTAGE% atende ao limite de $COVERAGE_THRESHOLD%."
+          fi
+
+      - name: Login no Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ env.DOCKER_PASSWORD }}
+
+      - name: Definir Caminhos e Variáveis de Ambiente
+        env:
+          DOMAIN: ${{ env.DOMAIN}}
+        run: |
+          echo "Compondo variáveis de ambiente..."
+          COMMIT_HASH=$(git rev-parse --short HEAD)
+          IMAGE_NAME=lncr-$DOMAIN-$COMMIT_HASH
+
+          echo "Exportando variáveis de ambiente..."
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+          echo "COMMIT_HASH=$COMMIT_HASH" >> $GITHUB_ENV
+          
+          
+          echo "Exportando variáveis de output..."
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_OUTPUT
+          echo "COMMIT_HASH=$COMMIT_HASH" >> $GITHUB_OUTPUT
+
+      - name: Login no Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Construir imagem Docker
+        env:
+          DOCKERFILE_PATH: ${{ env.DOCKERFILE_PATH }}
+        run: |
+          echo "Criando imagem da aplicação..."
+          docker build -t ${{ env.IMAGE_NAME }} -f $DOCKERFILE_PATH .
+
+      - name: Marcar imagem para ECR
+        run: |
+          ECR_REGISTRY=${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG=${{ env.COMMIT_HASH }}
+
+          echo "Marcando imagem para ECR..."
+          docker tag ${{ env.IMAGE_NAME }} $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+          docker tag ${{ env.IMAGE_NAME }} $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
+
+          echo "ECR_REGISTRY=$ECR_REGISTRY" >> $GITHUB_ENV
+
+      - name: Enviar imagem para ECR
+        run: |
+          IMAGE_TAG=${{ env.COMMIT_HASH }}
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+
+          echo "Imagem enviada para ECR: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG,latest"
+
+  approve-after-build:
+    name: Manual Approval (after build)
+    runs-on: ubuntu-latest
+    needs: build-and-upload
+    if: ${{ !inputs.only-helm-deploy }}
+    steps:
+      - name: Manual Approval
+        uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ github.TOKEN }}
+          approvers: gustavo-log,titoparizotto
+          minimum-approvals: 1
+          issue-title: "Deploy Infrastructure to Production"
+          issue-body: "Please approve the deployment of infrastructure changes."
+
+  approve-helm-only:
+    name: Manual Approval (helm only)
+    runs-on: ubuntu-latest
+    if: ${{ inputs.only-helm-deploy }}
+    steps:
+      - name: Manual Approval
+        uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ github.token }}
+          approvers: gustavo-log,titoparizotto
+          minimum-approvals: 1
+          issue-title: "Deploy Infrastructure to Production"
+          issue-body: "Please approve the deployment of infrastructure changes."
+
+  helm-deploy-after-approve:
+    name: Deploy com Helm
+    needs: [ approve-helm-only, approve-after-build ]
+    if: ${{ always() && (needs.approve-after-build.result == 'success' || needs.approve-helm-only.result == 'success') }}
+    runs-on: ${{ env.AWS_CODE_BUILD }}-${{ github.run_id }}-${{ github.run_attempt }}
+    environment:
+      name: ${{ github.ref_name == 'master' && 'prd' || 'dev' }}
+    steps:
+      - name: Fazer checkout do código
+        uses: actions/checkout@v4
+
+      - name: Instalar Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Configurar kubectl
+        run: |
+          aws eks update-kubeconfig --region ${{ vars.AWS_DEFAULT_REGION }} --name ${{ vars.EKS_CLUSTER }}
+
+      - name: Deploy com Helm
+        run: |
+          COMMIT_HASH="$(git rev-parse --short HEAD)"
+          IMAGE_TAG="${COMMIT_HASH}"
+          AWS_SECRET_MANAGER_ARN=$(aws secretsmanager list-secrets --region ${{ vars.AWS_DEFAULT_REGION }} --query "SecretList[?contains(Name, '${{ env.MS_NAME }}-prd-secret')].ARN | [0]" --output text)
+
+          cd iac/kubernetes
+
+          # Desabilitar ingress se INGRESS_HOST estiver vazio
+          INGRESS_ENABLED="true"
+          if [ -z "${{ env.INGRESS_HOST }}" ]; then
+            INGRESS_ENABLED="false"
+          fi
+
+          helm upgrade --install ${{ env.MS_NAME }} . \
+            --namespace production \
+            --create-namespace \
+            --set app.image.repository=${{ env.AWS_ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }} \
+            --set app.image.tag=${IMAGE_TAG} \
+            --set app.internalUrl="${{ env.LNCR_INTERNAL_URL }}" \
+            --set app.externalUrl="${{ env.LNCR_EXTERNAL_URL }}" \
+            --set ingress.annotations.alb\.ingress\.kubernetes\.io/load-balancer-name=${{ env.ALB_NAME }} \
+            --set ingress.annotations.alb\.ingress\.kubernetes\.io/group\.name=${ env.ALB_NAME } \
+            --set ingress.annotations.alb\.ingress\.kubernetes\.io/subnets=${{ env.ALB_SUBNETS }} \
+            --set ingress.annotations.alb\.ingress\.kubernetes\.io/security-groups=${{ env.ALB_SECURITY_GROUP }} \
+            --set ingress.enabled=${INGRESS_ENABLED} \
+            --set ingress.hosts[0].host="${{ env.INGRESS_HOST }}" \
+            --set secretProviderClass.parameters.objects.objectName=${AWS_SECRET_MANAGER_ARN} \
+            --force

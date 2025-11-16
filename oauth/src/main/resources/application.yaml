@@ -16,7 +16,7 @@ management:
     health:
       show-details: always
 lncr:
-  internalUrl: "${LNCR_ALB_URL:http://localhost:8080}"
+  internalUrl: "${LNCR_INTERNAL_URL:http://localhost:8080}"
   integration:
     customersUrl: "${lncr.internalUrl}/customers"
   oauth:
