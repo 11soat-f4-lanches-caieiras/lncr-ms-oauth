@@ -1,4 +1,11 @@
 name: Construir e Upload da Aplicação lncr-ms-oauth
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  id-token: write
+
 on:
   repository_dispatch:
     types: [infra-base-completed]
