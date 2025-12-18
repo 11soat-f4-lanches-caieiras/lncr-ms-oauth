@@ -62,7 +62,7 @@ class OauthCustomerRepositoryImplTest {
     @Test
     @DisplayName("Deve validar credenciais com sucesso quando customer existe")
     void deveValidarCredenciaisComSucessoQuandoCustomerExiste() {
-        when(customerIntegration.getCustomerDetails(1)).thenReturn(customerDTO);
+        when(customerIntegration.getCustomerDetailsByDocument("client-id")).thenReturn(customerDTO);
         when(oauthMapper.customerToDtoToOauthCredentialsDTO(customerDTO)).thenReturn(expectedCredentials);
 
         OauthCredentialsDTO result = oauthCustomerRepository.validateCredentials(inputCredentials);
@@ -75,18 +75,18 @@ class OauthCustomerRepositoryImplTest {
         assertNull(result.grant_type());
         assertNull(result.scope());
 
-        verify(customerIntegration, times(1)).getCustomerDetails(1);
+        verify(customerIntegration, times(1)).getCustomerDetailsByDocument("client-id");
         verify(oauthMapper, times(1)).customerToDtoToOauthCredentialsDTO(customerDTO);
     }
 
     @Test
     @DisplayName("Deve retornar null quando customer não é encontrado")
     void deveRetornarNullQuandoCustomerNaoEncontrado() {
-        when(customerIntegration.getCustomerDetails(999)).thenReturn(null);
+        when(customerIntegration.getCustomerDetailsByDocument("invalid-document")).thenReturn(null);
         when(oauthMapper.customerToDtoToOauthCredentialsDTO(null)).thenReturn(null);
 
         OauthCredentialsDTO inputWithInvalidId = new OauthCredentialsDTO(
-                "client-id",
+                "invalid-document",
                 "client-secret",
                 "password",
                 "customer",
@@ -97,7 +97,7 @@ class OauthCustomerRepositoryImplTest {
         OauthCredentialsDTO result = oauthCustomerRepository.validateCredentials(inputWithInvalidId);
 
         assertNull(result);
-        verify(customerIntegration, times(1)).getCustomerDetails(999);
+        verify(customerIntegration, times(1)).getCustomerDetailsByDocument("invalid-document");
         verify(oauthMapper, times(1)).customerToDtoToOauthCredentialsDTO(null);
     }
 
@@ -120,11 +120,11 @@ class OauthCustomerRepositoryImplTest {
                 2
         );
 
-        when(customerIntegration.getCustomerDetails(2)).thenReturn(customer2);
+        when(customerIntegration.getCustomerDetailsByDocument("98765432100")).thenReturn(customer2);
         when(oauthMapper.customerToDtoToOauthCredentialsDTO(customer2)).thenReturn(credentials2);
 
         OauthCredentialsDTO inputCredentials2 = new OauthCredentialsDTO(
-                "client-id",
+                "98765432100",
                 "client-secret",
                 "password",
                 "customer",
@@ -139,26 +139,26 @@ class OauthCustomerRepositoryImplTest {
         assertEquals("98765432100", result.client_id());
         assertEquals("Maria Santos", result.name());
 
-        verify(customerIntegration, times(1)).getCustomerDetails(2);
+        verify(customerIntegration, times(1)).getCustomerDetailsByDocument("98765432100");
         verify(oauthMapper, times(1)).customerToDtoToOauthCredentialsDTO(customer2);
     }
 
     @Test
-    @DisplayName("Deve chamar customerIntegration com o customerId correto")
+    @DisplayName("Deve chamar customerIntegration com o document number correto")
     void deveChamarCustomerIntegrationComCustomerIdCorreto() {
-        when(customerIntegration.getCustomerDetails(1)).thenReturn(customerDTO);
+        when(customerIntegration.getCustomerDetailsByDocument("client-id")).thenReturn(customerDTO);
         when(oauthMapper.customerToDtoToOauthCredentialsDTO(customerDTO)).thenReturn(expectedCredentials);
 
         oauthCustomerRepository.validateCredentials(inputCredentials);
 
-        verify(customerIntegration).getCustomerDetails(1);
+        verify(customerIntegration).getCustomerDetailsByDocument("client-id");
         verifyNoMoreInteractions(customerIntegration);
     }
 
     @Test
     @DisplayName("Deve chamar oauthMapper com o CustomerDTO correto")
     void deveChamarOauthMapperComCustomerDTOCorreto() {
-        when(customerIntegration.getCustomerDetails(1)).thenReturn(customerDTO);
+        when(customerIntegration.getCustomerDetailsByDocument("client-id")).thenReturn(customerDTO);
         when(oauthMapper.customerToDtoToOauthCredentialsDTO(customerDTO)).thenReturn(expectedCredentials);
 
         oauthCustomerRepository.validateCredentials(inputCredentials);
@@ -173,11 +173,11 @@ class OauthCustomerRepositoryImplTest {
         CustomerDTO customer0 = new CustomerDTO(0, "000", "Test User", "test@email.com");
         OauthCredentialsDTO credentials0 = new OauthCredentialsDTO("000", "test@email.com", null, null, "Test User", 0);
 
-        when(customerIntegration.getCustomerDetails(0)).thenReturn(customer0);
+        when(customerIntegration.getCustomerDetailsByDocument("000")).thenReturn(customer0);
         when(oauthMapper.customerToDtoToOauthCredentialsDTO(customer0)).thenReturn(credentials0);
 
         OauthCredentialsDTO inputWithZeroId = new OauthCredentialsDTO(
-                "client-id",
+                "000",
                 "client-secret",
                 "password",
                 "customer",
@@ -189,7 +189,7 @@ class OauthCustomerRepositoryImplTest {
 
         assertNotNull(result);
         assertEquals(0, result.customerId());
-        verify(customerIntegration).getCustomerDetails(0);
+        verify(customerIntegration).getCustomerDetailsByDocument("000");
     }
 
     @Test
@@ -198,7 +198,7 @@ class OauthCustomerRepositoryImplTest {
         CustomerDTO customerWithNulls = new CustomerDTO(1, null, null, null);
         OauthCredentialsDTO credentialsWithNulls = new OauthCredentialsDTO(null, null, null, null, null, 1);
 
-        when(customerIntegration.getCustomerDetails(1)).thenReturn(customerWithNulls);
+        when(customerIntegration.getCustomerDetailsByDocument("client-id")).thenReturn(customerWithNulls);
         when(oauthMapper.customerToDtoToOauthCredentialsDTO(customerWithNulls)).thenReturn(credentialsWithNulls);
 
         OauthCredentialsDTO result = oauthCustomerRepository.validateCredentials(inputCredentials);
@@ -209,7 +209,7 @@ class OauthCustomerRepositoryImplTest {
         assertNull(result.name());
         assertEquals(1, result.customerId());
 
-        verify(customerIntegration).getCustomerDetails(1);
+        verify(customerIntegration).getCustomerDetailsByDocument("client-id");
         verify(oauthMapper).customerToDtoToOauthCredentialsDTO(customerWithNulls);
     }
 
@@ -222,13 +222,13 @@ class OauthCustomerRepositoryImplTest {
         OauthCredentialsDTO cred1 = new OauthCredentialsDTO("111", "user1@email.com", null, null, "User 1", 1);
         OauthCredentialsDTO cred2 = new OauthCredentialsDTO("222", "user2@email.com", null, null, "User 2", 2);
 
-        when(customerIntegration.getCustomerDetails(1)).thenReturn(customer1);
-        when(customerIntegration.getCustomerDetails(2)).thenReturn(customer2);
+        when(customerIntegration.getCustomerDetailsByDocument("111")).thenReturn(customer1);
+        when(customerIntegration.getCustomerDetailsByDocument("222")).thenReturn(customer2);
         when(oauthMapper.customerToDtoToOauthCredentialsDTO(customer1)).thenReturn(cred1);
         when(oauthMapper.customerToDtoToOauthCredentialsDTO(customer2)).thenReturn(cred2);
 
-        OauthCredentialsDTO input1 = new OauthCredentialsDTO("x", "y", "z", "a", "User 1", 1);
-        OauthCredentialsDTO input2 = new OauthCredentialsDTO("x", "y", "z", "a", "User 2", 2);
+        OauthCredentialsDTO input1 = new OauthCredentialsDTO("111", "y", "z", "a", "User 1", 1);
+        OauthCredentialsDTO input2 = new OauthCredentialsDTO("222", "y", "z", "a", "User 2", 2);
 
         OauthCredentialsDTO result1 = oauthCustomerRepository.validateCredentials(input1);
         OauthCredentialsDTO result2 = oauthCustomerRepository.validateCredentials(input2);
@@ -239,8 +239,8 @@ class OauthCustomerRepositoryImplTest {
         assertEquals(1, result1.customerId());
         assertEquals(2, result2.customerId());
 
-        verify(customerIntegration).getCustomerDetails(1);
-        verify(customerIntegration).getCustomerDetails(2);
+        verify(customerIntegration).getCustomerDetailsByDocument("111");
+        verify(customerIntegration).getCustomerDetailsByDocument("222");
         verify(oauthMapper).customerToDtoToOauthCredentialsDTO(customer1);
         verify(oauthMapper).customerToDtoToOauthCredentialsDTO(customer2);
     }
@@ -248,37 +248,38 @@ class OauthCustomerRepositoryImplTest {
     @Test
     @DisplayName("Deve manter a ordem de chamadas dos métodos")
     void deveManterOrdemDeChamadasDosMetodos() {
-        when(customerIntegration.getCustomerDetails(1)).thenReturn(customerDTO);
+        when(customerIntegration.getCustomerDetailsByDocument("client-id")).thenReturn(customerDTO);
         when(oauthMapper.customerToDtoToOauthCredentialsDTO(customerDTO)).thenReturn(expectedCredentials);
 
         oauthCustomerRepository.validateCredentials(inputCredentials);
 
         var inOrder = inOrder(customerIntegration, oauthMapper);
-        inOrder.verify(customerIntegration).getCustomerDetails(1);
+        inOrder.verify(customerIntegration).getCustomerDetailsByDocument("client-id");
         inOrder.verify(oauthMapper).customerToDtoToOauthCredentialsDTO(customerDTO);
     }
 
     @Test
     @DisplayName("Deve validar credenciais ignorando outros campos do input")
     void deveValidarCredenciaisIgnorandoOutrosCamposDoInput() {
-        // Os campos client_id, client_secret, grant_type e scope do input não devem afetar o resultado
+        // Os campos client_secret, grant_type, scope, name e customerId do input não devem afetar o resultado
+        // Apenas o client_id (document number) é usado
         OauthCredentialsDTO differentInput = new OauthCredentialsDTO(
-                "different-client-id",
+                "client-id",
                 "different-secret",
                 "different-grant",
                 "different-scope",
                 "Different Name",
-                1  // Apenas o customerId é usado
+                999  // customerId não é usado
         );
 
-        when(customerIntegration.getCustomerDetails(1)).thenReturn(customerDTO);
+        when(customerIntegration.getCustomerDetailsByDocument("client-id")).thenReturn(customerDTO);
         when(oauthMapper.customerToDtoToOauthCredentialsDTO(customerDTO)).thenReturn(expectedCredentials);
 
         OauthCredentialsDTO result = oauthCustomerRepository.validateCredentials(differentInput);
 
         assertNotNull(result);
         assertEquals(expectedCredentials, result);
-        verify(customerIntegration).getCustomerDetails(1);
+        verify(customerIntegration).getCustomerDetailsByDocument("client-id");
     }
 }
 
