@@ -32,7 +32,7 @@ Microserviço responsável pelo gerenciamento de **Autenticação e Autorizaçã
 
 ## Sonar Quality Gate
 
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=11soat-f4-lanches-caieiras_lncr-ms-oauth&metric=alert_status)](https://sonarcloud.io/project/overview?id=11soat-f4-lanches-caieiras_lncr-ms-oauth)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=11soat-f4-lanches-caieiras_lncr-ms-oauth&metric=alert_status&token=51814d63573f0038cd74b9e5aaf21e1f4f0e62ff)](https://sonarcloud.io/summary/new_code?id=11soat-f4-lanches-caieiras_lncr-ms-oauth)
 
 Acesse o dashboard completo: [SonarCloud - lncr-ms-oauth](https://sonarcloud.io/project/overview?id=11soat-f4-lanches-caieiras_lncr-ms-oauth)
 
